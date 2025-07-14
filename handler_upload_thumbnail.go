@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -42,10 +44,16 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer file.Close()
+
 	contentType := header.Header.Get("Content-Type")
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to read file", err)
+	if contentType == "" || !strings.HasPrefix(contentType, "image/") {
+		respondWithError(w, http.StatusBadRequest, "Content-Type must be image", err)
+		return
+	}
+
+	mediaType, fileExt, correct := strings.Cut(contentType, "/")
+	if !correct || mediaType != "image" {
+		respondWithError(w, http.StatusBadRequest, "Content-Type must be image", err)
 		return
 	}
 
@@ -60,8 +68,20 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	thumbnail := base64.StdEncoding.EncodeToString(data)
-	thumbnailURL := fmt.Sprintf("data:%s;base64,%s", contentType, thumbnail)
+	thumbnailPath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", videoID, fileExt))
+	thumbnailFile, err := os.Create(thumbnailPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong", err)
+		return
+	}
+
+	_, err = io.Copy(thumbnailFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong", err)
+		return
+	}
+
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%v.%s", cfg.port, videoID, fileExt)
 	video.ThumbnailURL = &thumbnailURL
 
 	err = cfg.db.UpdateVideo(video)
