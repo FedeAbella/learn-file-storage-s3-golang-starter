@@ -93,7 +93,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	rand.Read(videoKeyBytes)
 	videoKeyHex := base64.RawURLEncoding.EncodeToString(videoKeyBytes)
 
-	videoKey := fmt.Sprintf("%s.mp4", videoKeyHex)
+	ratioPrefix, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Something went wrong", err)
+		return
+	}
+
+	videoKey := fmt.Sprintf("%s/%s.mp4", ratioPrefix, videoKeyHex)
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &videoKey,
